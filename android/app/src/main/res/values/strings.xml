@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NEET Prep</string>
+    <string name="title_activity_main">NEET Prep</string>
+    <string name="package_name">com.neet.prep</string>
+    <string name="custom_url_scheme">com.neet.prep</string>
+</resources>

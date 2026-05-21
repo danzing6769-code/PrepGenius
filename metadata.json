@@ -1,0 +1,6 @@
+{
+  "name": "PrepGenius: NEET & IAT Mock Test Generator",
+  "description": "An AI-powered application to generate on-demand mock tests for NEET and IAT exams, providing detailed explanations and score tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

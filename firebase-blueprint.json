@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "AttemptRecord": {
+      "title": "AttemptRecord",
+      "description": "A record of a mock test attempt by a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examType": { "type": "string", "enum": ["NEET", "IAT"] },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "subjects": { "type": "array", "items": { "type": "string" } },
+        "difficulty": { "type": "string", "enum": ["Foundational", "Adaptive", "Intense"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "examType", "score", "totalQuestions", "accuracy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/AttemptRecord" },
+      "description": "Stores test attempts. Users can only access their own."
+    }
+  }
+}

@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    function isValidAttempt(data) {
+      return data.keys().hasAll(['userId', 'examType', 'score', 'totalQuestions', 'accuracy', 'createdAt'])
+        // We might have subjects, chapters, and difficulty
+        && data.keys().size() <= 9
+        && data.userId is string && data.userId == request.auth.uid
+        && data.examType is string && (data.examType == 'NEET' || data.examType == 'IAT')
+        && data.score is number
+        && data.totalQuestions is number
+        && data.accuracy is number
+        // Check optional subjects
+        && (!('subjects' in data) || (data.subjects is list && data.subjects.size() <= 10 && (data.subjects.size() == 0 || data.subjects[0] is string)))
+        && (!('chapters' in data) || data.chapters is map)
+        && (!('difficulty' in data) || data.difficulty is string)
+        && data.createdAt == request.time;
+    }
+
+    match /attempts/{attemptId} {
+      // Allow user to list their own attempts
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Allow user to get their own attempt
+      allow get: if isSignedIn() && isValidId(attemptId) && resource.data.userId == request.auth.uid;
+      
+      // Allow user to create attempt records for themselves
+      allow create: if isSignedIn() && isValidId(attemptId) && isValidAttempt(incoming());
+      
+      // Attempts are immutable, so updating and deleting is not allowed
+      allow update, delete: if false;
+    }
+  }
+}
