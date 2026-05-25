@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import Razorpay from 'razorpay';
 
 dotenv.config();
 
@@ -22,6 +23,18 @@ const ai = new GoogleGenAI({
     },
   },
 });
+
+let razorpay: Razorpay | null = null;
+try {
+  if (process.env.VITE_RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    razorpay = new Razorpay({
+      key_id: process.env.VITE_RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+} catch (e) {
+  console.error("Failed to initialize Razorpay:", e);
+}
 
 async function startServer() {
   const app = express();
@@ -45,6 +58,26 @@ async function startServer() {
   });
   
   app.use('/api/', apiLimiter);
+
+  app.post('/api/create-order', async (req, res) => {
+    try {
+      if (!razorpay) {
+        return res.status(500).json({ error: "Razorpay is not configured on the server." });
+      }
+
+      const options = {
+        amount: 19900, // 199 INR in paise
+        currency: "INR",
+        receipt: `receipt_order_${Date.now()}`
+      };
+
+      const order = await razorpay.orders.create(options);
+      res.json(order);
+    } catch (error) {
+      console.error("Razorpay Order Error:", error);
+      res.status(500).json({ error: "Failed to create payment order." });
+    }
+  });
 
   app.post('/api/generate-test', async (req, res) => {
     try {
@@ -85,10 +118,16 @@ async function startServer() {
 
       let syllabusContext = `The test should ONLY cover these subjects: ${subjects.join(', ')}.`;
       if (chapters && Object.keys(chapters).length > 0) {
-        syllabusContext = `The test should cover the following specific sub-topics/chapters. If a subject is listed without chapters, cover the entire syllabus for that subject:`;
+        syllabusContext = `The test should roughly follow the distribution of sub-topics/chapters and weightages (percentages) listed below to make up the ${numberOfQuestions} total questions:`;
         subjects.forEach((subj: string) => {
            if (chapters[subj] && chapters[subj].length > 0) {
-              syllabusContext += `\n- ${subj}: ${chapters[subj].join(', ')}`;
+              syllabusContext += `\n- ${subj}:`;
+              chapters[subj].forEach((chap: any) => {
+                 let subtopicStr = chap.subtopics && chap.subtopics.length > 0 
+                     ? ` (Focus Subtopics: ${chap.subtopics.join(', ')})` 
+                     : '';
+                 syllabusContext += `\n    * ${chap.name}: Weight ~${chap.weightage}% ${subtopicStr}`;
+              });
            } else {
               syllabusContext += `\n- ${subj}: Entire Syllabus`;
            }
@@ -100,7 +139,8 @@ async function startServer() {
         questionFormatContext = "Generate a mix of Objective (multiple-choice) and Subjective (text-based answer) questions. Subjective questions should NOT have options and MUST provide a 'correctAnswerText' field instead of 'correctAnswerIndex'. 'type' must be either 'Objective' or 'Subjective'.";
       }
 
-      const contents = `Generate exactly ${numberOfQuestions} questions for the ${examType} exam. ${questionFormatContext} ${syllabusContext} ${difficultyContext} ${pyqContext} ${instituteContext} The expected difficulty format should match the context overall.`;
+      const randomSeed = Math.floor(Math.random() * 1000000);
+      const contents = `[Seed ${randomSeed}] Generate exactly ${numberOfQuestions} highly varied and completely distinct questions for the ${examType} exam. You must pull from all available diverse knowledge sources across the internet. Do NOT repeat or recycle standard, common questions from previous outputs. Force unique scenarios, varying contexts, and a completely fresh set of questions every time. ${questionFormatContext} ${syllabusContext} ${difficultyContext} ${pyqContext} ${instituteContext} The expected difficulty format should match the context overall.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.5-flash',

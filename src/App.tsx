@@ -5,8 +5,11 @@ import { TestRunner } from './components/TestRunner';
 import { TestResults } from './components/TestResults';
 import { ChapterNotes } from './components/ChapterNotes';
 import { Dashboard } from './components/Dashboard';
+import { PremiumModal } from './components/PremiumModal';
 import { ExamType, Question, TestConfig, AttemptRecord } from './types';
-import { BookOpen, LogOut, History, ShieldAlert, FileText, CheckCircle2, LayoutDashboard } from 'lucide-react';
+import { BookOpen, LogOut, History, ShieldAlert, FileText, CheckCircle2, LayoutDashboard, Crown } from 'lucide-react';
+
+// Rest of imports...
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, orderBy } from 'firebase/firestore';
@@ -21,8 +24,16 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<AttemptRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  // Premium state
+  const [isPremium, setIsPremium] = useState(false);
+  const [freeTestsUsed, setFreeTestsUsed] = useState(0);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
 
   useEffect(() => {
+    setIsPremium(localStorage.getItem('premium') === 'true');
+    setFreeTestsUsed(parseInt(localStorage.getItem('freeTestsUsed') || '0', 10));
+    
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthChecking(false);
@@ -70,6 +81,12 @@ export default function App() {
       setError("Please sign in to generate tests.");
       return;
     }
+    
+    if (!isPremium && freeTestsUsed >= 3) {
+      setShowPremiumModal(true);
+      return;
+    }
+    
     setTestStatus('GENERATING');
     setError(null);
     try {
@@ -87,6 +104,12 @@ export default function App() {
 
       setQuestions(data.questions);
       setAnswers({});
+      
+      if (!isPremium) {
+         const newCount = freeTestsUsed + 1;
+         setFreeTestsUsed(newCount);
+         localStorage.setItem('freeTestsUsed', newCount.toString());
+      }
       
       // Clear previous test session state
       sessionStorage.removeItem('testAnswers');
@@ -213,6 +236,14 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-4">
+            {!isPremium && user && (
+              <button 
+                onClick={() => setShowPremiumModal(true)}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-sm"
+              >
+                <Crown size={14} /> Crown Pro
+              </button>
+            )}
             <div className="text-right mr-3 hidden sm:block">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Student</p>
               <p className="text-sm font-bold text-slate-700">{user.displayName || user.email?.split('@')[0]}</p>
@@ -312,6 +343,13 @@ export default function App() {
           <TestResults questions={questions} answers={answers} onHome={goHome} />
         )}
       </main>
+
+      {showPremiumModal && (
+        <PremiumModal onAcknowledge={(success) => {
+          setShowPremiumModal(false);
+          if (success) setIsPremium(true);
+        }} />
+      )}
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import React from 'react';
-import { AttemptRecord } from '../types';
+import { AttemptRecord, Subject } from '../types';
 import { History, Target, TrendingUp, Trophy, ArrowRight } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { motion } from 'motion/react';
+import { StudyPlan } from './StudyPlan';
 
 interface DashboardProps {
   history: AttemptRecord[];
@@ -43,6 +44,26 @@ export function Dashboard({ history, loading }: DashboardProps) {
   }));
 
   const topScore = Math.max(...chartData.map(d => d.score));
+
+  // Determine Weak Chapters
+  // Look at tests with accuracy < 60%
+  const weakChaptersMap = new Map<string, { subject: Subject, chapterObj: any }>();
+  history.forEach(attempt => {
+    if (attempt.accuracy < 60 && attempt.chapters) {
+      Object.entries(attempt.chapters).forEach(([subj, chaptersArray]) => {
+        if (Array.isArray(chaptersArray)) {
+           chaptersArray.forEach(chap => {
+             const key = typeof chap === 'string' ? chap : (chap as any).name;
+             if (!weakChaptersMap.has(key)) {
+                weakChaptersMap.set(key, { subject: subj as Subject, chapterObj: chap });
+             }
+           });
+        }
+      });
+    }
+  });
+
+  const weakChaptersList = Array.from(weakChaptersMap.values()).slice(0, 7); // Max 7 for the week
 
   return (
     <motion.div 
@@ -139,6 +160,10 @@ export function Dashboard({ history, loading }: DashboardProps) {
            </div>
         </div>
       </div>
+      
+      {/* Weekly Study Plan */}
+      <StudyPlan weakChapters={weakChaptersList} />
+
     </motion.div>
   );
 }

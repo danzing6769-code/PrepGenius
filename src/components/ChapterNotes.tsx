@@ -90,7 +90,7 @@ export function ChapterNotes() {
             className="w-full p-4 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow disabled:opacity-50 appearance-none"
           >
             <option value="" disabled>Select a chapter</option>
-            {chapters.map(c => <option key={c} value={c}>{c}</option>)}
+            {chapters.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
           </select>
         </div>
 

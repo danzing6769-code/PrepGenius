@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { ExamType, Subject, TestConfig, Difficulty, InstituteStyle } from '../types';
+import { ExamType, Subject, TestConfig, Difficulty, InstituteStyle, ChapterSelection } from '../types';
 import { Loader2 } from 'lucide-react';
 import { SYLLABUS } from '../lib/syllabus';
 
@@ -26,7 +26,7 @@ export function TestConfigForm({ isGenerating, onStart }: TestConfigFormProps) {
   const [examType, setExamType] = useState<ExamType>('NEET');
   const [mode, setMode] = useState<'Exam' | 'Practice'>('Exam');
   const [subjects, setSubjects] = useState<Subject[]>(['Physics', 'Chemistry', 'Biology']);
-  const [chapters, setChapters] = useState<Partial<Record<Subject, string[]>>>({});
+  const [chapters, setChapters] = useState<Partial<Record<Subject, ChapterSelection[]>>>({});
   const [numQuestions, setNumQuestions] = useState<number>(5);
   const [difficulty, setDifficulty] = useState<Difficulty>('Adaptive');
   const [includePYQ, setIncludePYQ] = useState<boolean>(false);
@@ -48,19 +48,56 @@ export function TestConfigForm({ isGenerating, onStart }: TestConfigFormProps) {
   }, [isGenerating]);
 
   const handleSubjectToggle = (subject: Subject) => {
-    setSubjects(prev =>
-      prev.includes(subject) ? prev.filter(s => s !== subject) : [...prev, subject]
-    );
+    setSubjects(prev => {
+       if (prev.includes(subject)) {
+          setChapters(prevC => {
+             const newC = {...prevC};
+             delete newC[subject];
+             return newC;
+          });
+          return prev.filter(s => s !== subject);
+       }
+       return [...prev, subject];
+    });
   };
   
-  const handleChapterToggle = (subject: Subject, chapter: string) => {
+  const handleChapterToggle = (subject: Subject, chapterName: string, allSubtopics: string[]) => {
     setChapters(prev => {
       const subjChapters = prev[subject] || [];
-      if (subjChapters.includes(chapter)) {
-        return { ...prev, [subject]: subjChapters.filter(c => c !== chapter) };
+      const exists = subjChapters.find(c => c.name === chapterName);
+      if (exists) {
+        return { ...prev, [subject]: subjChapters.filter(c => c.name !== chapterName) };
       } else {
-        return { ...prev, [subject]: [...subjChapters, chapter] };
+        return { ...prev, [subject]: [...subjChapters, { name: chapterName, weightage: Math.max(1, Math.floor(100 / (subjChapters.length + 1))), subtopics: [...allSubtopics] }] };
       }
+    });
+  };
+
+  const handleSubtopicToggle = (subject: Subject, chapterName: string, subtopic: string) => {
+    setChapters(prev => {
+       const subjChapters = prev[subject] || [];
+       return {
+          ...prev,
+          [subject]: subjChapters.map(c => {
+             if (c.name === chapterName) {
+                const newSubtopics = c.subtopics.includes(subtopic) 
+                   ? c.subtopics.filter(s => s !== subtopic) 
+                   : [...c.subtopics, subtopic];
+                return { ...c, subtopics: newSubtopics };
+             }
+             return c;
+          })
+       };
+    });
+  };
+
+  const handleWeightageChange = (subject: Subject, chapterName: string, weightage: number) => {
+    setChapters(prev => {
+       const subjChapters = prev[subject] || [];
+       return {
+          ...prev,
+          [subject]: subjChapters.map(c => c.name === chapterName ? { ...c, weightage } : c)
+       };
     });
   };
 
@@ -121,7 +158,7 @@ export function TestConfigForm({ isGenerating, onStart }: TestConfigFormProps) {
                     </label>
                     
                     {isSelected && (
-                       <div className="pl-4 pr-2 py-2 max-h-48 overflow-y-auto mb-2 border-l-2 border-indigo-100 ml-4 space-y-1 scrollbar-thin">
+                       <div className="pl-4 pr-2 py-4 max-h-[400px] overflow-y-auto mb-2 border-l-2 border-indigo-100 ml-4 space-y-4 scrollbar-thin">
                           <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer border border-transparent">
                              <input 
                                type="checkbox" 
@@ -137,30 +174,63 @@ export function TestConfigForm({ isGenerating, onStart }: TestConfigFormProps) {
                              />
                              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">All Chapters (Full Syllabus)</span>
                           </label>
-                          {allSubjChapters.map(chap => {
-                             const isChapSelected = subjChapters.includes(chap);
-                             // If no chapters selected explicitely, assume all are selected conceptually, 
-                             // but we show them checked if 'All Chapters' is active
+                          {allSubjChapters.map(chapObj => {
+                             const isChapSelected = subjChapters.find(c => c.name === chapObj.name) !== undefined;
                              const isChecked = subjChapters.length === 0 ? true : isChapSelected;
+                             const loadedChap = subjChapters.find(c => c.name === chapObj.name);
                              return (
-                               <label key={chap} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer border border-transparent">
-                                 <input 
-                                   type="checkbox" 
-                                   className="w-4 h-4 accent-indigo-500 cursor-pointer"
-                                   checked={isChecked}
-                                   onChange={(e) => {
-                                      if (subjChapters.length === 0 && !e.target.checked) {
-                                         // user deselected one chapter when all were selected -> switch to explicit list minus one
-                                         setChapters(prev => ({ ...prev, [subject]: allSubjChapters.filter(c => c !== chap) }));
-                                      } else if (subjChapters.length === 0 && e.target.checked) {
-                                         // Shouldn't happen since it's already checked, but for completeness:
-                                      } else {
-                                         handleChapterToggle(subject, chap);
-                                      }
-                                   }}
-                                 />
-                                 <span className="text-sm font-medium text-slate-600 line-clamp-2" title={chap}>{chap}</span>
-                               </label>
+                               <div key={chapObj.name} className="flex flex-col gap-2 p-3 rounded-xl border border-slate-100 bg-white shadow-sm">
+                                 <label className="flex items-center gap-3 cursor-pointer">
+                                   <input 
+                                     type="checkbox" 
+                                     className="w-4 h-4 accent-indigo-500 cursor-pointer"
+                                     checked={isChecked}
+                                     onChange={(e) => {
+                                        if (subjChapters.length === 0 && !e.target.checked) {
+                                           setChapters(prev => ({ ...prev, [subject]: allSubjChapters.filter(c => c.name !== chapObj.name).map(c => ({name: c.name, weightage: 10, subtopics: [...c.subtopics]})) }));
+                                        } else {
+                                           handleChapterToggle(subject, chapObj.name, chapObj.subtopics);
+                                        }
+                                     }}
+                                   />
+                                   <span className="text-sm font-bold text-slate-700 line-clamp-2" title={chapObj.name}>{chapObj.name}</span>
+                                 </label>
+                                 
+                                 {isChapSelected && (
+                                   <div className="pl-7 pr-2 flex flex-col gap-3 mt-1">
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Question Weightage: {loadedChap?.weightage || 10}%</span>
+                                        <div className="flex items-center gap-3">
+                                          <input 
+                                            type="range" 
+                                            min="0" max="100" 
+                                            value={loadedChap?.weightage || 10}
+                                            onChange={(e) => handleWeightageChange(subject, chapObj.name, parseInt(e.target.value))}
+                                            className="flex-1 accent-indigo-500 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" 
+                                          />
+                                        </div>
+                                      </div>
+                                      
+                                      {chapObj.subtopics.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-1">
+                                          {chapObj.subtopics.map(sub => {
+                                            const isSubChecked = loadedChap ? loadedChap.subtopics.includes(sub) : false;
+                                            return (
+                                              <button 
+                                                type="button"
+                                                key={sub}
+                                                onClick={() => handleSubtopicToggle(subject, chapObj.name, sub)}
+                                                className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors border ${isSubChecked ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"}`}
+                                              >
+                                                {sub}
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      )}
+                                   </div>
+                                 )}
+                               </div>
                              );
                           })}
                        </div>

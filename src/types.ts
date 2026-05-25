@@ -16,6 +16,12 @@ export interface Question {
   explanation: string;
 }
 
+export interface ChapterSelection {
+  name: string;
+  weightage: number; // Percentage
+  subtopics: string[];
+}
+
 export interface TestConfig {
   mode?: 'Exam' | 'Practice';
   examType: ExamType;
@@ -26,7 +32,7 @@ export interface TestConfig {
   onlyPYQ?: boolean;
   includeSubjective?: boolean;
   instituteStyle?: InstituteStyle;
-  chapters?: Partial<Record<Subject, string[]>>;
+  chapters?: Partial<Record<Subject, ChapterSelection[]>>;
 }
 
 export interface TestResponse {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Question } from '../types';
-import { ChevronLeft, ChevronRight, Save, Clock, Flag, Map } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Save, Clock, Flag, Map, ShieldAlert, WifiOff } from 'lucide-react';
 
 interface TestRunnerProps {
   questions: Question[];
@@ -10,12 +10,25 @@ interface TestRunnerProps {
 }
 
 export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerProps) {
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showExplanation, setShowExplanation] = useState<Record<string, boolean>>({});
   const [showOverview, setShowOverview] = useState(false);
   const [answers, setAnswers] = useState<Record<string, number | string>>(() => {
     try {
-      const saved = sessionStorage.getItem('testAnswers');
+      const saved = localStorage.getItem('testAnswers');
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -23,7 +36,7 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
   });
   const [markedForReview, setMarkedForReview] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = sessionStorage.getItem('testReview');
+      const saved = localStorage.getItem('testReview');
       return saved ? JSON.parse(saved) : {};
     } catch {
       return {};
@@ -31,7 +44,7 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
   });
   const [timeLeft, setTimeLeft] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('testTimeLeft');
+      const saved = localStorage.getItem('testTimeLeft');
       return saved ? parseInt(saved) : questions.length * 60;
     } catch {
       return questions.length * 60;
@@ -39,26 +52,37 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
   });
 
   useEffect(() => {
-    sessionStorage.setItem('testAnswers', JSON.stringify(answers));
+    localStorage.setItem('testAnswers', JSON.stringify(answers));
   }, [answers]);
 
   useEffect(() => {
-    sessionStorage.setItem('testReview', JSON.stringify(markedForReview));
+    localStorage.setItem('testReview', JSON.stringify(markedForReview));
   }, [markedForReview]);
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [warnings, setWarnings] = useState(0);
+  const [showWarningModal, setShowWarningModal] = useState(false);
+  const [offlineWarningModal, setOfflineWarningModal] = useState(false);
 
   const handleFinishClick = useCallback(() => {
+    if (!isOnline) {
+      setOfflineWarningModal(true);
+      return;
+    }
     setShowConfirmModal(true);
-  }, []);
+  }, [isOnline]);
 
   const handleFinishConfirm = useCallback(() => {
+    if (!isOnline) {
+      setOfflineWarningModal(true);
+      return;
+    }
     setShowConfirmModal(false);
-    sessionStorage.removeItem('testAnswers');
-    sessionStorage.removeItem('testTimeLeft');
-    sessionStorage.removeItem('testReview');
+    localStorage.removeItem('testAnswers');
+    localStorage.removeItem('testTimeLeft');
+    localStorage.removeItem('testReview');
     onFinish(answers);
-  }, [answers, onFinish]);
+  }, [answers, onFinish, isOnline]);
   
   const handleFinishCancel = useCallback(() => {
     setShowConfirmModal(false);
@@ -67,10 +91,51 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
   useEffect(() => {
     if (mode === 'Practice') return;
 
+    const handleCheat = () => {
+      setWarnings(prev => {
+        const newWarnings = prev + 1;
+        if (newWarnings >= 5) {
+          return newWarnings;
+        }
+        setShowWarningModal(true);
+        return newWarnings;
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) handleCheat();
+    };
+
+    const handleBlur = () => {
+      handleCheat();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    if (warnings >= 5) {
+      handleFinishConfirm();
+    }
+  }, [warnings, handleFinishConfirm]);
+
+  useEffect(() => {
+    if (mode === 'Practice') return;
+
     if (timeLeft <= 0) {
-      sessionStorage.removeItem('testAnswers');
-      sessionStorage.removeItem('testTimeLeft');
-      sessionStorage.removeItem('testReview');
+      if (!isOnline) {
+         setOfflineWarningModal(true);
+         return;
+      }
+      localStorage.removeItem('testAnswers');
+      localStorage.removeItem('testTimeLeft');
+      localStorage.removeItem('testReview');
       onFinish(answers);
       return;
     }
@@ -78,7 +143,7 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
     const timerId = setInterval(() => {
       setTimeLeft(prev => {
         const newTime = prev - 1;
-        sessionStorage.setItem('testTimeLeft', newTime.toString());
+        localStorage.setItem('testTimeLeft', newTime.toString());
         return newTime;
       });
     }, 1000);
@@ -147,8 +212,20 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
   });
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6">
-      {/* Sidebar Overview */}
+    <div className="w-full flex flex-col gap-6">
+      {!isOnline && (
+        <div className="w-full max-w-6xl mx-auto bg-amber-50 border border-amber-200 text-amber-800 px-6 py-4 rounded-2xl shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <WifiOff size={20} className="text-amber-600" />
+            <div>
+              <p className="font-bold">You are currently offline</p>
+              <p className="text-xs font-medium text-amber-700">Don't worry, your test progress is being saved locally. Please restore your connection before submitting.</p>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6">
+        {/* Sidebar Overview */}
       <div className="w-full lg:w-80 flex flex-col gap-6">
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
            {mode === 'Exam' ? (
@@ -419,6 +496,68 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
       </div>
 
       <AnimatePresence>
+        {showWarningModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-red-900/40 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-red-100 text-center"
+            >
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <ShieldAlert size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800 tracking-tight mb-2">Warning ({warnings}/5)</h3>
+              <p className="text-slate-600 mb-8 font-medium">Please do not minimize the window or switch tabs. The test will automatically submit after 5 warnings.</p>
+              
+              <button
+                onClick={() => setShowWarningModal(false)}
+                className="w-full py-3 px-4 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-200 transition-colors"
+              >
+                I Understand
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {offlineWarningModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-amber-200 text-center"
+            >
+              <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                 <WifiOff size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-800 tracking-tight mb-2">No Connection</h3>
+              <p className="text-slate-600 font-medium mb-6">You are currently offline. Your progress is being safely stored locally, but you cannot submit the test until your connection is restored.</p>
+              
+              <button
+                onClick={() => setOfflineWarningModal(false)}
+                className="w-full py-3 px-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-900/10"
+              >
+                Continue Testing Offline
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showConfirmModal && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -453,6 +592,7 @@ export function TestRunner({ questions, onFinish, mode = 'Exam' }: TestRunnerPro
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
     </div>
   );
 }
